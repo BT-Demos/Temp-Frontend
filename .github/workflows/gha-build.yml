@@ -1,0 +1,87 @@
+name: GHA Build
+
+on:
+    push:
+     branches:
+      - main
+    workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compile Code
+        run: echo "Compiling..."
+
+      - name: Produce Binary
+        run: sleep 5
+
+      - name: Push binary
+        run: echo "Pushing Binary to ECR..."
+
+      - name: Register Build Artifacts in Cloudbees Platform
+        uses: cloudbees-gha-cbp/register-build-artifact@main
+        id: go-action
+        with:
+          name: "App7-Frontend"
+          version: 3.0.0
+          url: docker.io/App7/App7-Frontend:3.0.0
+          type: "docker"
+          cloudbees-pat: ${{ secrets.CBP_PAT_PROD }}
+            
+      - name: Publish evidence
+        uses: cloudbees-gha-cbp/publish-evidence-item@main
+        with:
+          cloudbees-pat: ${{ secrets.CBP_PAT_PROD }}
+          content: |-
+            Build Completed and artifacts published to Cloudbees platform
+
+  test:
+    runs-on: ubuntu-latest
+    needs: [build]   # Depends on 'build' job
+    steps:
+      - name: Run tests
+        run: echo "Running Tests..."
+
+      - name: Checkout to Collect Test Results
+        uses: actions/checkout@v3
+
+      - name: Publish Test Results in Cloudbees Plaform
+        uses: cloudbees-gha-cbp/publish-test-results@main
+        with:
+          test-type: GO
+          folder-path: test_reports/*
+          cloudbees-pat: ${{ secrets.CBP_PAT_PROD }}
+          
+      - name: Publish evidence
+        uses: cloudbees-gha-cbp/publish-evidence-item@main
+        with:
+          cloudbees-pat: ${{ secrets.CBP_PAT_PROD }}
+          content: |-
+            Testing Completed and results published to Cloudbees platform
+            Test | Results |
+            --------|---------|
+            Test 1 | PASS |
+            Test 2 | FAIL |
+            Test 3 | PASS |
+
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build, test]   # Depends on both 'build' and 'test' jobs
+    steps:
+      - name: Checkout to Prepare Manifest
+        uses: actions/checkout@v3
+        
+      - name: Trigger Deployment
+        uses: cloudbees-gha-cbp/run-cloudbees-workflow@main
+        id: deploy
+        with :
+          cloudbees-pat: ${{ secrets.CBP_PAT_PROD }}
+          workflow-file-name: "cbp-deploy.yaml"
+          workflow-inputs: '{"artifactName": "App7-Frontend","artifactVersion": "3.0.0", "environment": "qa"}'
+
+      - name: Use runUrl output
+        run: echo "The CloudBees run URL is ${{ steps.deploy.outputs.cbp_run_url}}"
+
+
